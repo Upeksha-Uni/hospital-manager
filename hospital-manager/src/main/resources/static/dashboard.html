@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Hospital Management System</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title" id="welcome-message">Dashboard</h1>
+                <p class="text-muted" id="user-role-label">Hospital Management Control Panel</p>
+            </div>
+        </div>
+
+        <div id="alert-box" class="alert"></div>
+
+        <div class="card-grid">
+            <div class="card" id="card-patients">
+                <div class="card-header">Patients</div>
+                <div class="card-value" id="stat-patients">-</div>
+                <div class="card-desc">Registered Patients</div>
+            </div>
+
+            <div class="card" id="card-doctors">
+                <div class="card-header">Doctors</div>
+                <div class="card-value" id="stat-doctors">-</div>
+                <div class="card-desc">Available Doctors</div>
+            </div>
+
+            <div class="card" id="card-appointments">
+                <div class="card-header">Appointments</div>
+                <div class="card-value" id="stat-appointments">-</div>
+                <div class="card-desc">Scheduled & Past</div>
+            </div>
+
+            <div class="card" id="card-records">
+                <div class="card-header">Medical Records</div>
+                <div class="card-value" id="stat-records">-</div>
+                <div class="card-desc">Diagnoses & Prescriptions</div>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <h3 style="margin-bottom: 12px; color: #0284c7;">Quick Actions</h3>
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;" id="quick-actions-container">
+            </div>
+        </div>
+
+        
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        const user = requireAuth();
+        if (user) {
+            renderNavbar('dashboard');
+            document.getElementById('welcome-message').innerText = 'Welcome, ' + (user.fullName || user.username);
+            document.getElementById('user-role-label').innerText = 'Logged in as ' + user.role;
+
+            setupQuickActions(user.role);
+            loadDashboardStats(user.role);
+            displayJwtInfo();
+        }
+
+        function setupQuickActions(role) {
+            const container = document.getElementById('quick-actions-container');
+            let buttons = '';
+
+            if (role === 'ADMIN') {
+                buttons += `
+                    <a href="patients.html" class="btn btn-primary">Manage Patients</a>
+                    <a href="doctors.html" class="btn btn-primary">Add / View Doctors</a>
+                    <a href="appointments.html" class="btn btn-secondary">View Appointments</a>
+                    <a href="records.html" class="btn btn-secondary">View Medical Records</a>
+                `;
+            } else if (role === 'DOCTOR') {
+                buttons += `
+                    <a href="appointments.html" class="btn btn-primary">My Appointments</a>
+                    <a href="records.html" class="btn btn-primary">Create Medical Record</a>
+                    <a href="patients.html" class="btn btn-secondary">View Patients</a>
+                `;
+            } else if (role === 'PATIENT') {
+                buttons += `
+                    <a href="appointments.html" class="btn btn-primary">Book Appointment</a>
+                    <a href="doctors.html" class="btn btn-secondary">View Doctors</a>
+                    <a href="records.html" class="btn btn-secondary">My Medical Records</a>
+                `;
+            }
+
+            container.innerHTML = buttons;
+        }
+
+        async function loadDashboardStats(role) {
+            try {
+                const docRes = await authFetch('/api/doctors');
+                if (docRes.ok) {
+                    const doctors = await docRes.json();
+                    document.getElementById('stat-doctors').innerText = doctors.length;
+                }
+
+                const patRes = await authFetch('/api/patients');
+                if (patRes.ok) {
+                    const patients = await patRes.json();
+                    document.getElementById('stat-patients').innerText = patients.length;
+                }
+
+                const apptRes = await authFetch('/api/appointments');
+                if (apptRes.ok) {
+                    const appointments = await apptRes.json();
+                    document.getElementById('stat-appointments').innerText = appointments.length;
+                }
+
+                const recRes = await authFetch('/api/records');
+                if (recRes.ok) {
+                    const records = await recRes.json();
+                    document.getElementById('stat-records').innerText = records.length;
+                }
+            } catch (err) {
+            }
+        }
+
+        function displayJwtInfo() {
+            const token = getToken();
+            if (!token) return;
+
+            document.getElementById('active-jwt-token').value = token;
+
+            try {
+                const parts = token.split('.');
+                if (parts.length === 3) {
+                    const payloadStr = atob(parts[1].replace(/-/g, '+').replace(/_/g, '/'));
+                    const parsed = JSON.parse(payloadStr);
+                    document.getElementById('decoded-jwt-payload').value = JSON.stringify(parsed, null, 2);
+                }
+            } catch (e) {
+                document.getElementById('decoded-jwt-payload').value = 'Failed to parse payload';
+            }
+        }
+
+        async function testTamperedToken() {
+            const token = getToken();
+            const resultSpan = document.getElementById('tamper-result');
+            resultSpan.innerText = 'Testing...';
+            resultSpan.style.color = '#0284c7';
+
+            try {
+                const parts = token.split('.');
+                if (parts.length !== 3) {
+                    resultSpan.innerText = 'Invalid token structure';
+                    return;
+                }
+
+                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
+                payload.role = 'ADMIN';
+
+                const modifiedPayloadBase64 = btoa(JSON.stringify(payload))
+                    .replace(/=/g, '')
+                    .replace(/\+/g, '-')
+                    .replace(/\//g, '_');
+
+                const tamperedToken = parts[0] + '.' + modifiedPayloadBase64 + '.' + parts[2];
+
+                const response = await fetch('/api/patients', {
+                    headers: { 'Authorization': 'Bearer ' + tamperedToken }
+                });
+
+                if (response.status === 401) {
+                    resultSpan.style.color = '#dc2626';
+                    resultSpan.innerText = 'Status 401 Unauthorized! Server successfully rejected tampered token with invalid signature.';
+                } else {
+                    resultSpan.style.color = '#166534';
+                    resultSpan.innerText = 'Status: ' + response.status;
+                }
+            } catch (err) {
+                resultSpan.style.color = '#dc2626';
+                resultSpan.innerText = 'Error: ' + err.message;
+            }
+        }
+    </script>
+</body>
+</html>

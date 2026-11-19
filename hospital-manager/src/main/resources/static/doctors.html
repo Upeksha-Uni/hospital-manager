@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Doctors - Hospital Management System</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Hospital Doctors</h1>
+                <p class="text-muted">Qualified Medical Specialists</p>
+            </div>
+            <button id="btn-toggle-doctor" class="btn btn-primary" onclick="toggleDoctorForm()" style="display: none;">+ Add Doctor</button>
+        </div>
+
+        <div id="alert-box" class="alert"></div>
+
+        <div id="add-doctor-card" class="card" style="display: none; margin-bottom: 20px;">
+            <h3 style="margin-bottom: 12px; color: #0284c7;">Add New Doctor</h3>
+            <form id="doctor-form">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label for="d-fullName">Full Name</label>
+                        <input type="text" id="d-fullName" class="form-control" required placeholder="Dr. John Doe">
+                    </div>
+                    <div class="form-group">
+                        <label for="d-username">Username</label>
+                        <input type="text" id="d-username" class="form-control" required placeholder="dr_john">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="d-password">Initial Password</label>
+                    <input type="password" id="d-password" class="form-control" required placeholder="Password for doctor account">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Create Doctor Account</button>
+                    <button type="button" class="btn btn-secondary" onclick="toggleDoctorForm()">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>Doctor ID</th>
+                        <th>Doctor Name</th>
+                        <th>Username</th>
+                        <th>Role</th>
+                    </tr>
+                </thead>
+                <tbody id="doctors-tbody">
+                    <tr><td colspan="4" style="text-align: center;">Loading doctors...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        const user = requireAuth();
+
+        if (user) {
+            renderNavbar('doctors');
+
+            if (user.role === 'ADMIN') {
+                document.getElementById('btn-toggle-doctor').style.display = 'block';
+            }
+
+            loadDoctors();
+        }
+
+        async function loadDoctors() {
+            try {
+                const response = await authFetch('/api/doctors');
+                if (!response.ok) {
+                    const data = await response.json();
+                    showAlert('alert-box', data.message || 'Failed to load doctors.');
+                    return;
+                }
+
+                const doctors = await response.json();
+                renderTable(doctors);
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        }
+
+        function renderTable(doctors) {
+            const tbody = document.getElementById('doctors-tbody');
+            if (doctors.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" style="text-align: center;">No doctors registered.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            for (const d of doctors) {
+                html += `
+                    <tr>
+                        <td>${d.id}</td>
+                        <td><strong>${d.fullName}</strong></td>
+                        <td><code>${d.username}</code></td>
+                        <td><span class="user-badge">${d.role}</span></td>
+                    </tr>
+                `;
+            }
+            tbody.innerHTML = html;
+        }
+
+        function toggleDoctorForm() {
+            const card = document.getElementById('add-doctor-card');
+            const isVisible = card.style.display !== 'none';
+            card.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                document.getElementById('doctor-form').reset();
+            }
+        }
+
+        document.getElementById('doctor-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideAlert('alert-box');
+
+            const fullName = document.getElementById('d-fullName').value.trim();
+            const username = document.getElementById('d-username').value.trim();
+            const password = document.getElementById('d-password').value;
+
+            try {
+                const response = await authFetch('/api/doctors', {
+                    method: 'POST',
+                    body: JSON.stringify({ fullName, username, password, role: 'DOCTOR' })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert('alert-box', data.message || 'Failed to add doctor.');
+                    return;
+                }
+
+                showAlert('alert-box', 'Doctor profile created successfully!', 'success');
+                toggleDoctorForm();
+                loadDoctors();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        });
+    </script>
+</body>
+</html>

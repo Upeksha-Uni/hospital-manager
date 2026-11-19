@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Patients - Hospital Management System</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Patient Management</h1>
+                <p class="text-muted">View and manage registered patients</p>
+            </div>
+            <button id="btn-toggle-add" class="btn btn-primary" onclick="toggleAddForm()" style="display: none;">+ Add New Patient</button>
+        </div>
+
+        <div id="alert-box" class="alert"></div>
+
+        <div id="add-patient-card" class="card mb-4" style="display: none; margin-bottom: 20px;">
+            <h3 style="margin-bottom: 12px; color: #0284c7;" id="form-heading">Add New Patient</h3>
+            <form id="patient-form">
+                <input type="hidden" id="patient-id">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group">
+                        <label for="p-fullName">Full Name</label>
+                        <input type="text" id="p-fullName" class="form-control" required placeholder="Patient full name">
+                    </div>
+                    <div class="form-group">
+                        <label for="p-age">Age</label>
+                        <input type="number" id="p-age" class="form-control" required placeholder="Age">
+                    </div>
+                    <div class="form-group">
+                        <label for="p-gender">Gender</label>
+                        <select id="p-gender" class="form-control">
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Other">Other</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="p-contact">Contact Number</label>
+                        <input type="text" id="p-contact" class="form-control" required placeholder="Phone number">
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label for="p-address">Address</label>
+                    <input type="text" id="p-address" class="form-control" placeholder="Residential address">
+                </div>
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Save Patient</button>
+                    <button type="button" class="btn btn-secondary" onclick="toggleAddForm()">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Full Name</th>
+                        <th>Age</th>
+                        <th>Gender</th>
+                        <th>Contact</th>
+                        <th>Address</th>
+                        <th id="th-actions" style="display: none;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="patients-tbody">
+                    <tr><td colspan="7" style="text-align: center;">Loading patients...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        const user = requireAuth();
+        let patientsList = [];
+
+        if (user) {
+            renderNavbar('patients');
+
+            if (user.role === 'ADMIN') {
+                document.getElementById('btn-toggle-add').style.display = 'block';
+                document.getElementById('th-actions').style.display = 'table-cell';
+            } else if (user.role === 'PATIENT') {
+                document.getElementById('th-actions').style.display = 'table-cell';
+            }
+
+            loadPatients();
+        }
+
+        async function loadPatients() {
+            try {
+                const response = await authFetch('/api/patients');
+                if (!response.ok) {
+                    const data = await response.json();
+                    showAlert('alert-box', data.message || 'Failed to load patients.');
+                    return;
+                }
+
+                patientsList = await response.json();
+                renderTable();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        }
+
+        function renderTable() {
+            const tbody = document.getElementById('patients-tbody');
+            if (patientsList.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No patients found.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            for (const p of patientsList) {
+                let actions = '';
+                if (user.role === 'ADMIN') {
+                    actions = `
+                        <button class="btn btn-danger btn-sm" onclick="deletePatient(${p.id})">Delete</button>
+                        <button class="btn btn-secondary btn-sm" onclick="editPatient(${p.id})">Edit</button>
+                    `;
+                } else if (user.role === 'PATIENT') {
+                    actions = `<button class="btn btn-secondary btn-sm" onclick="editPatient(${p.id})">Edit My Info</button>`;
+                }
+
+                html += `
+                    <tr>
+                        <td>${p.id}</td>
+                        <td><strong>${p.fullName}</strong></td>
+                        <td>${p.age || '-'}</td>
+                        <td>${p.gender || '-'}</td>
+                        <td>${p.contactNumber || '-'}</td>
+                        <td>${p.address || '-'}</td>
+                        ${actions ? `<td><div class="actions-cell">${actions}</div></td>` : ''}
+                    </tr>
+                `;
+            }
+            tbody.innerHTML = html;
+        }
+
+        function toggleAddForm() {
+            const card = document.getElementById('add-patient-card');
+            const isVisible = card.style.display !== 'none';
+            card.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                document.getElementById('patient-form').reset();
+                document.getElementById('patient-id').value = '';
+                document.getElementById('form-heading').innerText = 'Add New Patient';
+            }
+        }
+
+        function editPatient(id) {
+            const p = patientsList.find(item => item.id === id);
+            if (!p) return;
+
+            document.getElementById('patient-id').value = p.id;
+            document.getElementById('p-fullName').value = p.fullName || '';
+            document.getElementById('p-age').value = p.age || '';
+            document.getElementById('p-gender').value = p.gender || 'Male';
+            document.getElementById('p-contact').value = p.contactNumber || '';
+            document.getElementById('p-address').value = p.address || '';
+            document.getElementById('form-heading').innerText = 'Edit Patient Details';
+
+            document.getElementById('add-patient-card').style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        document.getElementById('patient-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideAlert('alert-box');
+
+            const id = document.getElementById('patient-id').value;
+            const patientData = {
+                fullName: document.getElementById('p-fullName').value.trim(),
+                age: parseInt(document.getElementById('p-age').value, 10),
+                gender: document.getElementById('p-gender').value,
+                contactNumber: document.getElementById('p-contact').value.trim(),
+                address: document.getElementById('p-address').value.trim()
+            };
+
+            try {
+                let url = '/api/patients';
+                let method = 'POST';
+
+                if (id) {
+                    url = '/api/patients/' + id;
+                    method = 'PUT';
+                }
+
+                const response = await authFetch(url, {
+                    method: method,
+                    body: JSON.stringify(patientData)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert('alert-box', data.message || 'Error saving patient.');
+                    return;
+                }
+
+                showAlert('alert-box', 'Patient saved successfully!', 'success');
+                toggleAddForm();
+                loadPatients();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        });
+
+        async function deletePatient(id) {
+            if (!confirm('Are you sure you want to delete patient #' + id + '?')) {
+                return;
+            }
+
+            hideAlert('alert-box');
+
+            try {
+                const response = await authFetch('/api/patients/' + id, {
+                    method: 'DELETE'
+                });
+
+                if (response.status === 409) {
+                    const data = await response.json();
+                    showAlert('alert-box', data.message || 'Cannot delete patient with associated appointments or records.');
+                    return;
+                }
+
+                if (!response.ok) {
+                    const data = await response.json();
+                    showAlert('alert-box', data.message || 'Failed to delete patient.');
+                    return;
+                }
+
+                showAlert('alert-box', 'Patient deleted successfully.', 'success');
+                loadPatients();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        }
+    </script>
+</body>
+</html>

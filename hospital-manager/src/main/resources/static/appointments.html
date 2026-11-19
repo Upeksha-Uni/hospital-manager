@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appointments - Hospital Management System</title>
+    <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+    <div id="navbar-container"></div>
+
+    <div class="container">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Appointments</h1>
+                <p class="text-muted">Manage consultations and bookings</p>
+            </div>
+            <button id="btn-toggle-book" class="btn btn-primary" onclick="toggleBookForm()">+ Book Appointment</button>
+        </div>
+
+        <div id="alert-box" class="alert"></div>
+
+        <div id="book-card" class="card" style="display: none; margin-bottom: 20px;">
+            <h3 style="margin-bottom: 12px; color: #0284c7;">Book an Appointment</h3>
+            <form id="book-form">
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                    <div class="form-group" id="patient-select-group" style="display: none;">
+                        <label for="book-patient">Select Patient</label>
+                        <select id="book-patient" class="form-control">
+                            <option value="">-- Choose Patient --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="book-doctor">Select Doctor</label>
+                        <select id="book-doctor" class="form-control" required>
+                            <option value="">-- Choose Doctor --</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="book-date">Date & Time</label>
+                        <input type="datetime-local" id="book-date" class="form-control" required>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="book-reason">Reason for Visit</label>
+                    <textarea id="book-reason" class="form-control" placeholder="Brief description of symptoms or checkup"></textarea>
+                </div>
+
+                <div style="display: flex; gap: 10px;">
+                    <button type="submit" class="btn btn-primary">Confirm Booking</button>
+                    <button type="button" class="btn btn-secondary" onclick="toggleBookForm()">Cancel</button>
+                </div>
+            </form>
+        </div>
+
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Patient</th>
+                        <th>Doctor</th>
+                        <th>Date & Time</th>
+                        <th>Reason</th>
+                        <th>Status</th>
+                        <th id="th-appt-actions" style="display: none;">Update Status</th>
+                    </tr>
+                </thead>
+                <tbody id="appointments-tbody">
+                    <tr><td colspan="7" style="text-align: center;">Loading appointments...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="js/api.js"></script>
+    <script>
+        const user = requireAuth();
+
+        if (user) {
+            renderNavbar('appointments');
+
+            if (user.role === 'ADMIN' || user.role === 'DOCTOR') {
+                document.getElementById('th-appt-actions').style.display = 'table-cell';
+            }
+
+            if (user.role === 'ADMIN') {
+                document.getElementById('patient-select-group').style.display = 'block';
+                loadPatientsForSelect();
+            }
+
+            loadDoctorsForSelect();
+            loadAppointments();
+        }
+
+        async function loadDoctorsForSelect() {
+            try {
+                const response = await authFetch('/api/doctors');
+                if (response.ok) {
+                    const doctors = await response.json();
+                    const select = document.getElementById('book-doctor');
+                    for (const d of doctors) {
+                        const opt = document.createElement('option');
+                        opt.value = d.id;
+                        opt.textContent = d.fullName;
+                        select.appendChild(opt);
+                    }
+                }
+            } catch (err) {}
+        }
+
+        async function loadPatientsForSelect() {
+            try {
+                const response = await authFetch('/api/patients');
+                if (response.ok) {
+                    const patients = await response.json();
+                    const select = document.getElementById('book-patient');
+                    for (const p of patients) {
+                        const opt = document.createElement('option');
+                        opt.value = p.id;
+                        opt.textContent = '#' + p.id + ' - ' + p.fullName;
+                        select.appendChild(opt);
+                    }
+                }
+            } catch (err) {}
+        }
+
+        async function loadAppointments() {
+            try {
+                const response = await authFetch('/api/appointments');
+                if (!response.ok) {
+                    const data = await response.json();
+                    showAlert('alert-box', data.message || 'Failed to load appointments.');
+                    return;
+                }
+
+                const list = await response.json();
+                renderTable(list);
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        }
+
+        function renderTable(list) {
+            const tbody = document.getElementById('appointments-tbody');
+            if (list.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center;">No appointments found.</td></tr>';
+                return;
+            }
+
+            let html = '';
+            for (const a of list) {
+                let badgeClass = 'status-scheduled';
+                if (a.status === 'COMPLETED') badgeClass = 'status-completed';
+                if (a.status === 'CANCELLED') badgeClass = 'status-cancelled';
+
+                let actions = '';
+                if (user.role === 'ADMIN' || user.role === 'DOCTOR') {
+                    actions = `
+                        <button class="btn btn-success btn-sm" onclick="changeStatus(${a.id}, 'COMPLETED')">Complete</button>
+                        <button class="btn btn-danger btn-sm" onclick="changeStatus(${a.id}, 'CANCELLED')">Cancel</button>
+                    `;
+                }
+
+                const dateStr = a.appointmentDate ? a.appointmentDate.replace('T', ' ') : '-';
+
+                html += `
+                    <tr>
+                        <td>${a.id}</td>
+                        <td>${a.patientName}</td>
+                        <td><strong>${a.doctorName}</strong></td>
+                        <td>${dateStr}</td>
+                        <td>${a.reason || '-'}</td>
+                        <td><span class="status-badge ${badgeClass}">${a.status}</span></td>
+                        ${actions ? `<td><div class="actions-cell">${actions}</div></td>` : ''}
+                    </tr>
+                `;
+            }
+            tbody.innerHTML = html;
+        }
+
+        function toggleBookForm() {
+            const card = document.getElementById('book-card');
+            const isVisible = card.style.display !== 'none';
+            card.style.display = isVisible ? 'none' : 'block';
+            if (!isVisible) {
+                const tomorrow = new Date();
+                tomorrow.setDate(tomorrow.getDate() + 1);
+                tomorrow.setHours(10, 0, 0, 0);
+                document.getElementById('book-date').value = tomorrow.toISOString().slice(0, 16);
+            }
+        }
+
+        document.getElementById('book-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            hideAlert('alert-box');
+
+            const doctorId = document.getElementById('book-doctor').value;
+            const appointmentDate = document.getElementById('book-date').value;
+            const reason = document.getElementById('book-reason').value.trim();
+
+            const payload = {
+                doctorId: parseInt(doctorId, 10),
+                appointmentDate: appointmentDate,
+                reason: reason
+            };
+
+            if (user.role === 'ADMIN') {
+                const pId = document.getElementById('book-patient').value;
+                if (!pId) {
+                    showAlert('alert-box', 'Please select a patient');
+                    return;
+                }
+                payload.patientId = parseInt(pId, 10);
+            }
+
+            try {
+                const response = await authFetch('/api/appointments', {
+                    method: 'POST',
+                    body: JSON.stringify(payload)
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert('alert-box', data.message || 'Failed to book appointment.');
+                    return;
+                }
+
+                showAlert('alert-box', 'Appointment booked successfully!', 'success');
+                toggleBookForm();
+                loadAppointments();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        });
+
+        async function changeStatus(id, newStatus) {
+            hideAlert('alert-box');
+            try {
+                const response = await authFetch('/api/appointments/' + id + '/status', {
+                    method: 'PUT',
+                    body: JSON.stringify({ status: newStatus })
+                });
+
+                const data = await response.json();
+
+                if (!response.ok) {
+                    showAlert('alert-box', data.message || 'Failed to update status.');
+                    return;
+                }
+
+                showAlert('alert-box', 'Status updated to ' + newStatus, 'success');
+                loadAppointments();
+            } catch (err) {
+                showAlert('alert-box', err.message);
+            }
+        }
+    </script>
+</body>
+</html>
